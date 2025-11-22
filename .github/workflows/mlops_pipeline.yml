@@ -12,6 +12,18 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
+
+    # ---------- DEBUG: Check if secrets exist ----------
+    - name: DEBUG — Check Secret Availability
+      run: |
+        echo "===== SECRET CHECK START ====="
+        if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then echo "CLIENT ID = EMPTY"; else echo "CLIENT ID = OK"; fi
+        if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then echo "TENANT ID = EMPTY"; else echo "TENANT ID = OK"; fi
+        if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then echo "SUBSCRIPTION ID = EMPTY"; else echo "SUBSCRIPTION ID = OK"; fi
+        if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then echo "CLIENT SECRET = EMPTY"; else echo "CLIENT SECRET = OK"; fi
+        echo "===== SECRET CHECK END ====="
+        
+
     # ---------- Azure Login ----------
     - name: Azure Login
       uses: azure/login@v1
@@ -20,6 +32,7 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+
 
     # ---------- Python Setup ----------
     - name: Setup Python
@@ -30,6 +43,7 @@ jobs:
     - name: Install Azure ML SDK
       run: |
         pip install azure-ai-ml azure-identity
+
 
     # ---------- Run Pipeline ----------
     - name: Execute Azure ML Pipeline
