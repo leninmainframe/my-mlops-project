@@ -1,8 +1,11 @@
-# Trigger update to ensure GH Actions pulls latest workflow
 name: Run MLOps Pipeline on Azure ML
 
 on:
   workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   run-azureml-pipeline:
@@ -12,26 +15,21 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    # ---------- DEBUG SECRET CHECK ----------
-    - name: DEBUG - Check Secret Availability
+    - name: DEBUG — Check Secret Availability
       run: |
         echo "===== SECRET CHECK START ====="
         if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then echo "AZURE_CLIENT_ID = EMPTY"; else echo "AZURE_CLIENT_ID = OK"; fi
         if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then echo "AZURE_TENANT_ID = EMPTY"; else echo "AZURE_TENANT_ID = OK"; fi
         if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then echo "AZURE_SUBSCRIPTION_ID = EMPTY"; else echo "AZURE_SUBSCRIPTION_ID = OK"; fi
-        if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then echo "AZURE_CLIENT_SECRET = EMPTY"; else echo "AZURE_CLIENT_SECRET = OK"; fi
         echo "===== SECRET CHECK END ====="
 
-    # ---------- Azure Login ----------
-    - name: Azure Login
+    - name: Azure Login using OIDC
       uses: azure/login@v1
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
 
-    # ---------- Python Setup ----------
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
