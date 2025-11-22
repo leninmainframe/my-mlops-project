@@ -1,3 +1,4 @@
+# Trigger update to ensure GH Actions pulls latest workflow
 name: Run MLOps Pipeline on Azure ML
 
 on:
