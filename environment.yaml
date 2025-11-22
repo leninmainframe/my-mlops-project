@@ -1,0 +1,25 @@
+$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
+name: pricing-env
+version: 1
+
+image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest
+
+conda_file:
+  name: pricing-conda
+  channels:
+    - defaults
+    - conda-forge
+  dependencies:
+    - python=3.10
+    - pip
+    - pip:
+        - pandas
+        - scikit-learn
+        - optuna
+        - mlflow
+        - joblib
+        - numpy
+        - azure-ai-ml
+        - azure-identity
+        - cloudpickle
+        - pyyaml
