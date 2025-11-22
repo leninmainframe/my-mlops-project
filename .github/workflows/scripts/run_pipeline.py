@@ -8,9 +8,9 @@ cred = DefaultAzureCredential()
 
 ml_client = MLClient(
     cred,
-    subscription_id = "<replace>",
-    resource_group = "<replace>",
-    workspace_name = "<replace>"
+    subscription_id = "4327687e-5856-460d-9b72-ac75b8b1a3d2",
+    resource_group = "MLOPS",
+    workspace_name = "mlops"
 )
 
 pipeline_job = ml_client.jobs.get("pricing_ml_pipeline")
