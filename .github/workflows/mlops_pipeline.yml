@@ -8,33 +8,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
     - name: Checkout repository
       uses: actions/checkout@v3
 
-
-    # ---------- DEBUG: Check if secrets exist ----------
     - name: DEBUG — Check Secret Availability
       run: |
         echo "===== SECRET CHECK START ====="
-        if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then echo "CLIENT ID = EMPTY"; else echo "CLIENT ID = OK"; fi
-        if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then echo "TENANT ID = EMPTY"; else echo "TENANT ID = OK"; fi
-        if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then echo "SUBSCRIPTION ID = EMPTY"; else echo "SUBSCRIPTION ID = OK"; fi
-        if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then echo "CLIENT SECRET = EMPTY"; else echo "CLIENT SECRET = OK"; fi
+        if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then echo "AZURE_CREDENTIALS = EMPTY"; else echo "AZURE_CREDENTIALS = OK"; fi
+        if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then echo "AZURE_CLIENT_ID = EMPTY"; else echo "AZURE_CLIENT_ID = OK"; fi
+        if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then echo "AZURE_TENANT_ID = EMPTY"; else echo "AZURE_TENANT_ID = OK"; fi
+        if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then echo "AZURE_SUBSCRIPTION_ID = EMPTY"; else echo "AZURE_SUBSCRIPTION_ID = OK"; fi
+        if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then echo "AZURE_CLIENT_SECRET = EMPTY"; else echo "AZURE_CLIENT_SECRET = OK"; fi
         echo "===== SECRET CHECK END ====="
-        
 
-    # ---------- Azure Login ----------
     - name: Azure Login
       uses: azure/login@v1
       with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+        creds: ${{ secrets.AZURE_CREDENTIALS }}   # preferred
 
-
-    # ---------- Python Setup ----------
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
@@ -44,8 +35,6 @@ jobs:
       run: |
         pip install azure-ai-ml azure-identity
 
-
-    # ---------- Run Pipeline ----------
     - name: Execute Azure ML Pipeline
       run: |
         python scripts/run_pipeline.py
