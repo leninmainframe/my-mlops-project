@@ -14,5 +14,4 @@ ml_client = MLClient(
 )
 
 pipeline_job = ml_client.jobs.get("pricing_ml_pipeline")
-
 print("Triggered pipeline:", pipeline_job.name)
