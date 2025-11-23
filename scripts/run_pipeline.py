@@ -26,7 +26,7 @@ preprocess_component = ml_client.components.get("preprocess_component", version=
 train_component = ml_client.components.get("train_tune_component", version="1")
 register_component = ml_client.components.get("register_model_component", version="1")
 
-print("Loaded components successfully.")
+print("Loaded components successfully into the workspace.")
 
 @pipeline()
 def pricing_pipeline(raw_data):
