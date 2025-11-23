@@ -1,4 +1,4 @@
-from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential
 from azure.ai.ml import MLClient, Input
 from azure.ai.ml.dsl import pipeline
 from azure.ai.ml.constants import AssetTypes
