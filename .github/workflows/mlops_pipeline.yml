@@ -10,20 +10,12 @@ permissions:
 jobs:
   run-azureml-pipeline:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
+
+    - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: DEBUG — Check Secret Availability
-      run: |
-        echo "===== SECRET CHECK START ====="
-        if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then echo "AZURE_CLIENT_ID = EMPTY"; else echo "AZURE_CLIENT_ID = OK"; fi
-        if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then echo "AZURE_TENANT_ID = EMPTY"; else echo "AZURE_TENANT_ID = OK"; fi
-        if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then echo "AZURE_SUBSCRIPTION_ID = EMPTY"; else echo "AZURE_SUBSCRIPTION_ID = OK"; fi
-        echo "===== SECRET CHECK END ====="
-
-    - name: Azure Login using OIDC
+    - name: Azure Login (OIDC)
       uses: azure/login@v1
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -36,9 +28,7 @@ jobs:
         python-version: '3.10'
 
     - name: Install Azure ML SDK
-      run: |
-        pip install azure-ai-ml azure-identity
+      run: pip install azure-ai-ml azure-identity
 
     - name: Execute Azure ML Pipeline
-      run: |
-        python scripts/run_pipeline.py
+      run: python scripts/run_pipeline.py
