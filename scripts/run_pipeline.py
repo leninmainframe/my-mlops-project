@@ -1,17 +1,31 @@
-from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 from azure.ai.ml import MLClient, Input
 from azure.ai.ml.dsl import pipeline
 from azure.ai.ml.constants import AssetTypes
+import os
 
 # Azure ML workspace details
 SUBSCRIPTION_ID = "4327687e-5856-460d-9b72-ac75b8b1a3d2"
 RESOURCE_GROUP = "MLOPS"
 WORKSPACE = "mlops"
 
-# Authenticate using GitHub Action’s Azure login
-cred = AzureCliCredential()
+# Debug prints
+print("===== DEBUG VALUES =====")
+print("SUBSCRIPTION_ID =", SUBSCRIPTION_ID)
+print("RESOURCE_GROUP  =", RESOURCE_GROUP)
+print("WORKSPACE       =", WORKSPACE)
 
-# Connect to workspace
+print("\nEnvironment variables visible to job:")
+print("AZURE_SUBSCRIPTION_ID =", os.getenv("AZURE_SUBSCRIPTION_ID"))
+print("AZURE_TENANT_ID       =", os.getenv("AZURE_TENANT_ID"))
+print("AZURE_CLIENT_ID       =", os.getenv("AZURE_CLIENT_ID"))
+print("AZURE_CLIENT_SECRET   =", "SET" if os.getenv("AZURE_CLIENT_SECRET") else "NOT SET")
+print("=========================\n")
+
+# Authenticate from GitHub Actions
+cred = DefaultAzureCredential()
+
+# Connect to Azure ML workspace
 ml_client = MLClient(
     credential=cred,
     subscription_id=SUBSCRIPTION_ID,
