@@ -4,7 +4,7 @@ version: 1
 display_name: Preprocess Data Component
 type: command
 description: Component to clean and preprocess the raw input data.
-code: ./pipeline_components  # Points to the directory containing preprocess.py
+code: ../pipeline_components  # Points to the directory containing preprocess.py
 
 # IMPORTANT: You must replace 'azureml:AzureML-Minimal:latest' with an environment 
 # that has all your necessary Python libraries (pandas, scikit-learn, etc.) installed.
