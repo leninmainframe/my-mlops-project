@@ -1,53 +1,52 @@
 # scripts/register_environment.py
 import os
 import sys
-from azure.identity import ClientSecretCredential
+from azure.identity import DefaultAzureCredential
 from azure.ai.ml import MLClient, load_environment
 
-# Accept multiple possible env var names to avoid mismatch
-SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID") or os.environ.get("AZ_SUBSCRIPTION_ID")
-RESOURCE_GROUP  = os.environ.get("AZ_RESOURCE_GROUP") or os.environ.get("AZURE_RESOURCE_GROUP") or os.environ.get("RESOURCE_GROUP")
-WORKSPACE       = os.environ.get("AZ_WORKSPACE") or os.environ.get("AZURE_WORKSPACE") or os.environ.get("WORKSPACE")
+# --- Configuration & Authentication Setup ---
 
-CLIENT_ID       = os.environ.get("AZURE_CLIENT_ID") or os.environ.get("CLIENT_ID")
-TENANT_ID       = os.environ.get("AZURE_TENANT_ID") or os.environ.get("TENANT_ID")
-CLIENT_SECRET   = os.environ.get("AZURE_CLIENT_SECRET") or os.environ.get("CLIENT_SECRET")
+# 1. Read config from env (set by workflow YAML)
+SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID")
+RESOURCE_GROUP = os.environ.get("AZ_RESOURCE_GROUP")
+WORKSPACE = os.environ.get("AZ_WORKSPACE")
 
-# non-sensitive debug summary
-print("===== DEBUG (non-sensitive) =====")
-print("SUBSCRIPTION_ID =", "SET" if SUBSCRIPTION_ID else "MISSING")
-print("RESOURCE_GROUP  =", RESOURCE_GROUP or "MISSING")
-print("WORKSPACE       =", WORKSPACE or "MISSING")
-print("CLIENT_ID       =", "SET" if CLIENT_ID else "MISSING")
-print("TENANT_ID       =", "SET" if TENANT_ID else "MISSING")
-print("CLIENT_SECRET   =", "SET" if CLIENT_SECRET else "MISSING")
-print("=================================")
-
-# fail early with helpful hint
-if not (SUBSCRIPTION_ID and RESOURCE_GROUP and WORKSPACE):
-    print("Missing one of SUBSCRIPTION_ID / RESOURCE_GROUP / WORKSPACE. Check your workflow 'env:' mapping.")
+if not all([SUBSCRIPTION_ID, RESOURCE_GROUP, WORKSPACE]):
+    print("One or more required environment variables (SUBSCRIPTION_ID, RESOURCE_GROUP, WORKSPACE) are missing. Exiting.")
     sys.exit(1)
 
-# if you are using client secret (recommended for register steps) ensure client creds are present
-if not (CLIENT_ID and TENANT_ID and CLIENT_SECRET):
-    print("Missing client secret credentials (AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET).")
-    print("If you prefer OIDC instead, switch to DefaultAzureCredential and grant the GitHub OIDC federated credential access.")
+# 2. Authenticate using DefaultAzureCredential
+# This uses the token established by the 'Azure Login (OIDC)' step.
+try:
+    cred = DefaultAzureCredential()
+    ml_client = MLClient(
+        cred, 
+        subscription_id=SUBSCRIPTION_ID,
+        resource_group_name=RESOURCE_GROUP, 
+        workspace_name=WORKSPACE
+    )
+except Exception as e:
+    print(f"Error during MLClient initialization: {e}")
     sys.exit(1)
 
-# create credential and client
-cred = ClientSecretCredential(tenant_id=TENANT_ID, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+print(f"Connected to workspace: {WORKSPACE}")
 
-ml_client = MLClient(
-    credential=cred,
-    subscription_id=SUBSCRIPTION_ID,
-    resource_group=RESOURCE_GROUP,
-    workspace_name=WORKSPACE,
-)
+# --- Environment Registration Logic ---
 
-print("Registering environment...")
+# Assuming your environment definition file is named environment.yaml and is in the root directory
+# If you used 'pricing-env' previously, ensure that name matches here or in the environment.yaml file.
+ENVIRONMENT_YAML_PATH = "environment.yaml" # or "environment.yml" if that's the name you used
 
-# load env file that is located in repo root (workflow working dir)
-env = load_environment("environment.yaml")
+if not os.path.exists(ENVIRONMENT_YAML_PATH):
+    print(f"Error: Environment YAML file not found at {ENVIRONMENT_YAML_PATH}. Exiting.")
+    sys.exit(1)
 
-created = ml_client.environments.create_or_update(env)
-print("Environment registered:", created.name, "version:", created.version)
+print(f"Loading environment definition from {ENVIRONMENT_YAML_PATH}...")
+try:
+    env_def = load_environment(source=ENVIRONMENT_YAML_PATH)
+    # Using create_or_update to register the environment or update its version
+    created_env = ml_client.environments.create_or_update(env_def) 
+    print(f"Successfully registered environment: {created_env.name} (Version {created_env.version})")
+except Exception as e:
+    print(f"Error registering environment: {e}")
+    sys.exit(1)
