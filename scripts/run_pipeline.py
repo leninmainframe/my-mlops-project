@@ -7,8 +7,8 @@ from azure.ai.ml.constants import AssetTypes
 
 # Read config from env (set by workflow)
 SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID")
-RESOURCE_GROUP = os.environ.get("AZ_RESOURCE_GROUP", "MLOPS")
-WORKSPACE = os.environ.get("AZ_WORKSPACE", "mlops")
+RESOURCE_GROUP = os.environ.get("AZ_RESOURCE_GROUP")
+WORKSPACE = os.environ.get("AZ_WORKSPACE")
 
 print("===== DEBUG VALUES =====")
 print("SUBSCRIPTION_ID =", "SET" if SUBSCRIPTION_ID else "MISSING")
@@ -16,8 +16,8 @@ print("RESOURCE_GROUP  =", RESOURCE_GROUP)
 print("WORKSPACE       =", WORKSPACE)
 print("=========================")
 
-if not SUBSCRIPTION_ID:
-    print("Missing AZURE subscription id. Exiting.")
+if not SUBSCRIPTION_ID or not RESOURCE_GROUP or not WORKSPACE:
+    print("One or more required env vars (SUB_ID, RG, or WKSP) are missing. Exiting.")
     sys.exit(1)
 
 # Use DefaultAzureCredential so OIDC from azure/login works
