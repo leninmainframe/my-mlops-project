@@ -24,7 +24,7 @@ ml_client = MLClient(
 
 print("Registering environment...")
 
-env = load_environment("../environment.yaml")
+env = load_environment("environment.yaml")
 created = ml_client.environments.create_or_update(env)
 
 print("Environment registered:", created.name, "version:", created.version)
