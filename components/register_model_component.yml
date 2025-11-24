@@ -1,0 +1,18 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+name: register_model_component
+version: 1
+display_name: Model Registration
+type: command
+description: Component to register the final trained model in the workspace.
+code: ./pipeline_components  # Points to the directory containing register_model.py
+
+# IMPORTANT: Ensure this environment has libraries like azure-ai-ml for model registration.
+environment: azureml:AzureML-Minimal:latest 
+
+command: >
+  python register_model.py
+  --model_path ${{inputs.model_path}}
+inputs:
+  model_path:
+    type: uri_folder
+    description: Path to the folder containing the serialized model file.
