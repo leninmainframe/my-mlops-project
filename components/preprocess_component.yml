@@ -8,7 +8,7 @@ code: ../pipeline_components  # Points to the directory containing preprocess.py
 
 # IMPORTANT: You must replace 'azureml:AzureML-Minimal:latest' with an environment 
 # that has all your necessary Python libraries (pandas, scikit-learn, etc.) installed.
-environment: azureml:AzureML-sklearn-1.0-ubuntu20.04-py310-cpu:latest
+environment: azureml:pricing-env:1
 
 command: >
   python preprocess.py
