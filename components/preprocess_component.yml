@@ -1,0 +1,24 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+name: preprocess_component
+version: 1
+display_name: Preprocess Data Component
+type: command
+description: Component to clean and preprocess the raw input data.
+code: ./pipeline_components  # Points to the directory containing preprocess.py
+
+# IMPORTANT: You must replace 'azureml:AzureML-Minimal:latest' with an environment 
+# that has all your necessary Python libraries (pandas, scikit-learn, etc.) installed.
+environment: azureml:AzureML-Minimal:latest 
+
+command: >
+  python preprocess.py
+  --input_data ${{inputs.input_data}} 
+  --output_data ${{outputs.output_data}}
+inputs:
+  input_data:
+    type: uri_file
+    description: Path to the raw input data file (used_cars.csv).
+outputs:
+  output_data:
+    type: uri_folder
+    description: Path to the folder where processed data will be saved.
