@@ -7,7 +7,7 @@ description: Component for training and tuning the machine learning model.
 code: ../pipeline_components  # Points to the directory containing train_tune.py
 
 # IMPORTANT: Ensure this environment has libraries like scikit-learn, joblib, etc.
-environment: azureml:AzureML-Minimal:latest 
+environment: azureml:AzureML-sklearn-1.0-ubuntu20.04-py310-cpu:latest
 
 command: >
   python train_tune.py
