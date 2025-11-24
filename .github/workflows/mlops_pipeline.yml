@@ -44,8 +44,11 @@ jobs:
 
     - name: Execute Azure ML Pipeline
       env:
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        AZ_RESOURCE_GROUP: your-resource-group-name
-        AZ_WORKSPACE: your-ml-workspace-name
+        AZ_RESOURCE_GROUP: MLOPS
+        AZ_WORKSPACE: mlops
       run: |
         python scripts/run_pipeline.py
