@@ -4,7 +4,7 @@ version: 1
 display_name: Model Registration
 type: command
 description: Component to register the final trained model in the workspace.
-code: ./pipeline_components  # Points to the directory containing register_model.py
+code: ../pipeline_components  # Points to the directory containing register_model.py
 
 # IMPORTANT: Ensure this environment has libraries like azure-ai-ml for model registration.
 environment: azureml:AzureML-Minimal:latest 
