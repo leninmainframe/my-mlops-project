@@ -1,0 +1,23 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+name: train_tune_component
+version: 1
+display_name: Model Training and Tuning
+type: command
+description: Component for training and tuning the machine learning model.
+code: ./pipeline_components  # Points to the directory containing train_tune.py
+
+# IMPORTANT: Ensure this environment has libraries like scikit-learn, joblib, etc.
+environment: azureml:AzureML-Minimal:latest 
+
+command: >
+  python train_tune.py
+  --processed_data ${{inputs.processed_data}} 
+  --model_folder ${{outputs.model_folder}}
+inputs:
+  processed_data:
+    type: uri_folder
+    description: Path to the folder containing the processed dataset.
+outputs:
+  model_folder:
+    type: uri_folder
+    description: Path to the folder containing the serialized model and metadata.
