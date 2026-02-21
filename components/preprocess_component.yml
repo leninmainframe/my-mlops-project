@@ -5,7 +5,7 @@ $schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.jso
 # Cleans raw CSV, engineers features, logs stats to MLflow
 # ─────────────────────────────────────────────────────────────────────────────
 name: preprocess_component
-version: 2
+version: 3
 display_name: "Data Preprocessing"
 type: command
 description: >
@@ -16,7 +16,7 @@ description: >
 # Points to the folder containing preprocess.py (and the other .py files)
 code: ../pipeline_components
 
-environment: azureml:pricing-env:1
+environment: azureml:pricing-env:2
 
 command: >-
   python preprocess.py

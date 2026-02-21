@@ -1,36 +1,25 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # .github/workflows/mlops_pipeline.yml
 #
-# Azure ML MLOps CI/CD Pipeline
-# Updated: 2026-02-21
+# Azure ML MLOps CI/CD — Single Pipeline Workflow
+# ─────────────────────────────────────────────────────────────────────────────
 #
-# WORKFLOW GRAPH  (each box is a separate GitHub Actions Job)
+# What this workflow does (ONE script handles everything):
 #
-#   ┌─────────────────────┐
-#   │   1. setup          │  ← checkout + install deps + upload dataset
-#   └──────────┬──────────┘
-#              │
-#   ┌──────────▼──────────┐
-#   │   2. register-env   │  ← register pricing-env (conda env) in AML
-#   └──────────┬──────────┘
-#              │
-#   ┌──────────▼──────────┐
-#   │   3. register-comps │  ← register all 3 pipeline components (v2)
-#   └──────────┬──────────┘
-#              │
-#   ┌──────────▼──────────┐
-#   │   4. run-pipeline   │  ← submit pipeline job on AML
-#   │                     │    (AML runs internally in order:)
-#   │   [preprocess]      │     1. preprocess.py  → cleaned CSV
-#   │       ↓             │     2. train_tune.py  → model + MLflow logs
-#   │   [train_tune]      │     3. register_model.py → AML model registry
-#   │       ↓             │
-#   │   [register_model]  │
-#   └──────────┬──────────┘
-#              │
-#   ┌──────────▼──────────┐
-#   │   5. summary        │  ← print job name + Studio URL to GH Actions UI
-#   └─────────────────────┘
+#   python scripts/run_pipeline_all.py
+#       │
+#       ├── Step 1: Upload used_cars.csv  →  AzureML datastore (Data Asset)
+#       ├── Step 2: Register Environment  →  pricing-env (conda)
+#       ├── Step 3: Register Components   →  preprocess / train_tune / register_model (v2)
+#       └── Step 4: Submit Pipeline Job   →  AzureML runs A→B→C on ml-cluster
+#                       A. preprocess_component   → processed_data.csv
+#                       B. train_tune_component   → model.joblib + MLflow logs
+#                       C. register_model_component → AML Model Registry
+#
+# TRIGGERS
+# ─────────
+#   • Push to main / develop  (when pipeline code changes)
+#   • Manual via GitHub Actions UI  (workflow_dispatch)
 #
 # REQUIRED GITHUB SECRETS  (Settings → Secrets → Actions)
 # ──────────────────────────────────────────────────────────
@@ -45,7 +34,7 @@
 
 name: "Azure ML MLOps Pipeline"
 
-# ── Trigger: auto on code push, or manual from GH UI ────────────────────────
+# ── Triggers ─────────────────────────────────────────────────────────────────
 on:
   push:
     branches: [main, develop]
@@ -54,20 +43,21 @@ on:
       - "components/**"
       - "scripts/**"
       - "environment.yaml"
+      - "used_cars.csv"
       - ".github/workflows/mlops_pipeline.yml"
 
   workflow_dispatch:
     inputs:
-      trials:
-        description: "Optuna tuning trials"
+      skip_upload:
+        description: "Skip dataset upload? (set 1 if already uploaded)"
         required: false
-        default: "20"
-      data_path:
-        description: "Override AzureML data URI (leave blank for default)"
+        default: "0"
+      compute:
+        description: "Override compute cluster (leave blank → uses AZ_COMPUTE secret)"
         required: false
         default: ""
-      compute:
-        description: "Override compute cluster name (leave blank for AZ_COMPUTE secret)"
+      data_path:
+        description: "Override data URI (leave blank → auto-resolved from registry)"
         required: false
         default: ""
 
@@ -75,11 +65,12 @@ permissions:
   contents: read
   id-token: write
 
+# Cancel stale runs on the same branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# ── Shared env vars injected into every job automatically ────────────────────
+# ── Shared env vars for all steps ────────────────────────────────────────────
 env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
@@ -87,54 +78,49 @@ env:
   AZURE_CLIENT_SECRET:   ${{ secrets.AZURE_CLIENT_SECRET }}
   AZ_RESOURCE_GROUP:     ${{ secrets.AZ_RESOURCE_GROUP }}
   AZ_WORKSPACE:          ${{ secrets.AZ_WORKSPACE }}
-  COMPUTE: >-
-    ${{
-      github.event.inputs.compute != '' &&
-      github.event.inputs.compute ||
-      secrets.AZ_COMPUTE
-    }}
-  PYTHON_VERSION: "3.10"
+  PYTHON_VERSION:        "3.10"
 
 # =============================================================================
-# JOBS
+# SINGLE JOB — runs run_pipeline_all.py which handles everything
 # =============================================================================
 jobs:
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 1 — SETUP
-  # Checkout code, login to Azure, install dependencies, upload raw dataset
-  # ═══════════════════════════════════════════════════════════════════════════
-  setup:
-    name: "1️⃣  Setup & Upload Dataset"
+  mlops-pipeline:
+    name: "🚀 Azure ML MLOps — Full Pipeline Run"
     runs-on: ubuntu-latest
 
     steps:
+
+      # ── 1. Checkout ────────────────────────────────────────────────────────
       - name: "📥 Checkout repository"
         uses: actions/checkout@v4
 
-      - name: "🔑 Validate required secrets"
+      # ── 2. Validate secrets ────────────────────────────────────────────────
+      - name: "🔑 Validate GitHub Secrets"
         run: |
-          echo "════════════════════════════════════════"
-          echo "  Checking GitHub Secrets"
-          echo "════════════════════════════════════════"
+          echo "══════════════════════════════════════════"
+          echo "  Checking required secrets"
+          echo "══════════════════════════════════════════"
           MISSING=0
-          for SECRET_NAME in \
+          for SECRET in \
             AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID \
-            AZURE_SUBSCRIPTION_ID AZ_RESOURCE_GROUP AZ_WORKSPACE COMPUTE; do
-            VAL=$(printenv "$SECRET_NAME" || true)
+            AZURE_SUBSCRIPTION_ID AZ_RESOURCE_GROUP AZ_WORKSPACE AZ_COMPUTE; do
+            VAL=$(printenv "$SECRET" || true)
             if [ -z "$VAL" ]; then
-              echo "  ❌ MISSING : $SECRET_NAME"
+              echo "  ❌ MISSING : $SECRET"
               MISSING=$((MISSING + 1))
             else
-              echo "  ✅ OK      : $SECRET_NAME"
+              echo "  ✅ OK      : $SECRET"
             fi
           done
-          echo "════════════════════════════════════════"
+          echo "══════════════════════════════════════════"
           if [ "$MISSING" -gt 0 ]; then
             echo "::error::$MISSING secret(s) missing — add under Settings → Secrets → Actions"
             exit 1
           fi
+        env:
+          AZ_COMPUTE: ${{ secrets.AZ_COMPUTE }}
 
+      # ── 3. Azure Login ─────────────────────────────────────────────────────
       - name: "🔐 Azure Login (Service Principal)"
         uses: azure/login@v2
         with:
@@ -146,290 +132,86 @@ jobs:
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
             }
 
+      # ── 4. Setup Python ────────────────────────────────────────────────────
       - name: "🐍 Setup Python ${{ env.PYTHON_VERSION }}"
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
+      # ── 5. Install dependencies ────────────────────────────────────────────
       - name: "📦 Install Python dependencies"
         run: |
           python -m pip install --upgrade pip
-          pip install "azure-ai-ml>=1.12.0" "azure-identity>=1.15.0" pyyaml
+          pip install \
+            "azure-ai-ml>=1.12.0" \
+            "azure-identity>=1.15.0" \
+            pyyaml
 
-      - name: "📊 Upload used_cars.csv to AzureML datastore"
+      # ── 6. Run full pipeline (single script) ──────────────────────────────
+      - name: "⚙️  Run Full MLOps Pipeline"
+        id: run_pipeline
+        env:
+          # Compute: prefer workflow_dispatch input, then secret
+          COMPUTE: >-
+            ${{
+              github.event.inputs.compute != '' &&
+              github.event.inputs.compute ||
+              secrets.AZ_COMPUTE
+            }}
+          # Dataset upload: set SKIP_UPLOAD=1 if already uploaded
+          SKIP_UPLOAD: ${{ github.event.inputs.skip_upload || '0' }}
+          # Optional data URI override
+          DATA_PATH: ${{ github.event.inputs.data_path || '' }}
         run: |
-          echo "════════════════════════════════════════"
-          echo "  Uploading raw dataset"
-          echo "════════════════════════════════════════"
-          python - <<'PYEOF'
-          import sys
-          sys.path.insert(0, "scripts")
-          from auth_helper import load_config, get_ml_client
-          from azure.ai.ml.entities import Data
-          from azure.ai.ml.constants import AssetTypes
+          echo "══════════════════════════════════════════"
+          echo "  Starting run_pipeline_all.py"
+          echo "  This single script runs all steps:"
+          echo "    1. Upload dataset to AzureML"
+          echo "    2. Register Environment (pricing-env)"
+          echo "    3. Register Components (preprocess/train/register)"
+          echo "    4. Submit AzureML Pipeline Job"
+          echo "══════════════════════════════════════════"
 
-          cfg = load_config()
-          ml_client = get_ml_client(cfg)
+          python scripts/run_pipeline_all.py | tee /tmp/pipeline_output.txt
 
-          data_asset = Data(
-              path="./used_cars.csv",
-              type=AssetTypes.URI_FILE,
-              name="used_cars_raw",
-              description="Raw used-car CSV — uploaded by GitHub Actions",
-          )
-          created = ml_client.data.create_or_update(data_asset)
-          print(f"  ✅ Registered data asset: {created.name}  (version {created.version})")
-          PYEOF
-
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 2 — REGISTER ENVIRONMENT
-  # Register the pricing-env conda environment in Azure ML
-  # Depends on: setup
-  # ═══════════════════════════════════════════════════════════════════════════
-  register-environment:
-    name: "2️⃣  Register AML Environment"
-    runs-on: ubuntu-latest
-    needs: setup                            # ← only runs after setup succeeds
-
-    steps:
-      - name: "📥 Checkout repository"
-        uses: actions/checkout@v4
-
-      - name: "🔐 Azure Login (Service Principal)"
-        uses: azure/login@v2
-        with:
-          creds: >-
-            {
-              "clientId":       "${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret":   "${{ secrets.AZURE_CLIENT_SECRET }}",
-              "tenantId":       "${{ secrets.AZURE_TENANT_ID }}",
-              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-            }
-
-      - name: "🐍 Setup Python ${{ env.PYTHON_VERSION }}"
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: "📦 Install Python dependencies"
-        run: |
-          pip install "azure-ai-ml>=1.12.0" "azure-identity>=1.15.0" pyyaml
-
-      - name: "🌱 Register Azure ML Environment  (pricing-env)"
-        run: |
-          echo "════════════════════════════════════════"
-          echo "  Registering: pricing-env (conda)"
-          echo "════════════════════════════════════════"
-          python scripts/register_environment.py
-
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 3 — REGISTER COMPONENTS
-  # Register all three pipeline component YAMLs in Azure ML
-  # Depends on: register-environment
-  # ═══════════════════════════════════════════════════════════════════════════
-  register-components:
-    name: "3️⃣  Register Pipeline Components"
-    runs-on: ubuntu-latest
-    needs: register-environment             # ← only runs after env is registered
-
-    steps:
-      - name: "📥 Checkout repository"
-        uses: actions/checkout@v4
-
-      - name: "🔐 Azure Login (Service Principal)"
-        uses: azure/login@v2
-        with:
-          creds: >-
-            {
-              "clientId":       "${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret":   "${{ secrets.AZURE_CLIENT_SECRET }}",
-              "tenantId":       "${{ secrets.AZURE_TENANT_ID }}",
-              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-            }
-
-      - name: "🐍 Setup Python ${{ env.PYTHON_VERSION }}"
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: "📦 Install Python dependencies"
-        run: |
-          pip install "azure-ai-ml>=1.12.0" "azure-identity>=1.15.0" pyyaml
-
-      - name: "🧩 Register Component 1/3 — preprocess_component (v2)"
-        run: |
-          echo "════════════════════════════════════════"
-          echo "  Registering: preprocess_component"
-          echo "════════════════════════════════════════"
-          python - <<'PYEOF'
-          import sys
-          sys.path.insert(0, "scripts")
-          from auth_helper import load_config, get_ml_client
-          from azure.ai.ml import load_component
-
-          cfg = load_config()
-          ml_client = get_ml_client(cfg)
-          comp = load_component(source="components/preprocess_component.yml")
-          r = ml_client.components.create_or_update(comp)
-          print(f"  ✅ {r.name}  version {r.version}")
-          PYEOF
-
-      - name: "🧩 Register Component 2/3 — train_tune_component (v2)"
-        run: |
-          echo "════════════════════════════════════════"
-          echo "  Registering: train_tune_component"
-          echo "════════════════════════════════════════"
-          python - <<'PYEOF'
-          import sys
-          sys.path.insert(0, "scripts")
-          from auth_helper import load_config, get_ml_client
-          from azure.ai.ml import load_component
-
-          cfg = load_config()
-          ml_client = get_ml_client(cfg)
-          comp = load_component(source="components/train_tune_component.yml")
-          r = ml_client.components.create_or_update(comp)
-          print(f"  ✅ {r.name}  version {r.version}")
-          PYEOF
-
-      - name: "🧩 Register Component 3/3 — register_model_component (v2)"
-        run: |
-          echo "════════════════════════════════════════"
-          echo "  Registering: register_model_component"
-          echo "════════════════════════════════════════"
-          python - <<'PYEOF'
-          import sys
-          sys.path.insert(0, "scripts")
-          from auth_helper import load_config, get_ml_client
-          from azure.ai.ml import load_component
-
-          cfg = load_config()
-          ml_client = get_ml_client(cfg)
-          comp = load_component(source="components/register_model_component.yml")
-          r = ml_client.components.create_or_update(comp)
-          print(f"  ✅ {r.name}  version {r.version}")
-          PYEOF
-
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 4 — RUN PIPELINE
-  # Submit the AzureML pipeline job (runs components sequentially on AML)
-  #   AzureML internal order:
-  #     Step A: preprocess_component  → processed_data.csv
-  #     Step B: train_tune_component  → model.joblib + MLflow logs
-  #     Step C: register_model_component → AML Model Registry entry
-  # Depends on: register-components
-  # ═══════════════════════════════════════════════════════════════════════════
-  run-pipeline:
-    name: "4️⃣  Execute AzureML Pipeline"
-    runs-on: ubuntu-latest
-    needs: register-components              # ← only runs after ALL components registered
-
-    outputs:
-      job_name:   ${{ steps.submit.outputs.job_name }}
-      studio_url: ${{ steps.submit.outputs.studio_url }}
-
-    steps:
-      - name: "📥 Checkout repository"
-        uses: actions/checkout@v4
-
-      - name: "🔐 Azure Login (Service Principal)"
-        uses: azure/login@v2
-        with:
-          creds: >-
-            {
-              "clientId":       "${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret":   "${{ secrets.AZURE_CLIENT_SECRET }}",
-              "tenantId":       "${{ secrets.AZURE_TENANT_ID }}",
-              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-            }
-
-      - name: "🐍 Setup Python ${{ env.PYTHON_VERSION }}"
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: "📦 Install Python dependencies"
-        run: |
-          pip install "azure-ai-ml>=1.12.0" "azure-identity>=1.15.0" pyyaml
-
-      # Pass data_path from workflow_dispatch if provided
-      - name: "🚀 Submit pipeline job"
-        id: submit
-        run: |
-          echo "════════════════════════════════════════"
-          echo "  AzureML Pipeline flow:"
-          echo "    A. preprocess_component  → cleaned CSV"
-          echo "    B. train_tune_component  → model + MLflow"
-          echo "    C. register_model_component → AML registry"
-          echo "════════════════════════════════════════"
-
-          # Override DATA_PATH if provided via workflow_dispatch
-          if [ -n "${{ github.event.inputs.data_path }}" ]; then
-            export DATA_PATH="${{ github.event.inputs.data_path }}"
-            echo "Custom DATA_PATH: $DATA_PATH"
-          fi
-
-          python scripts/execute_pipeline.py | tee /tmp/pipeline_out.txt
-
-          # Parse outputs for downstream summary job
-          JOB_NAME=$(grep "Job name" /tmp/pipeline_out.txt | awk '{print $NF}' || echo "N/A")
-          STUDIO_URL=$(grep "Studio URL" /tmp/pipeline_out.txt | awk '{print $NF}' || echo "")
+          # Extract job name + Studio URL for summary
+          JOB_NAME=$(grep "Job name" /tmp/pipeline_output.txt | awk '{print $NF}' || echo "N/A")
+          STUDIO_URL=$(grep "Studio URL" /tmp/pipeline_output.txt | awk '{print $NF}' || echo "")
           echo "job_name=$JOB_NAME"     >> "$GITHUB_OUTPUT"
           echo "studio_url=$STUDIO_URL" >> "$GITHUB_OUTPUT"
-          echo ""
-          echo "  AzureML Job   : $JOB_NAME"
-          echo "  Monitor at    : $STUDIO_URL"
 
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 5 — SUMMARY
-  # Write a rich markdown summary to the GitHub Actions UI
-  # Depends on: run-pipeline  (runs even if previous job failed, so you always
-  # see output)
-  # ═══════════════════════════════════════════════════════════════════════════
-  summary:
-    name: "5️⃣  Pipeline Summary"
-    runs-on: ubuntu-latest
-    needs: run-pipeline
-    if: always()                            # ← always runs so you get a summary
-
-    steps:
+      # ── 7. Write Job Summary ───────────────────────────────────────────────
       - name: "📋 Write GitHub Actions Job Summary"
+        if: always()
         run: |
-          JOB_NAME="${{ needs.run-pipeline.outputs.job_name }}"
-          STUDIO_URL="${{ needs.run-pipeline.outputs.studio_url }}"
-          PIPELINE_STATUS="${{ needs.run-pipeline.result }}"
+          JOB_NAME="${{ steps.run_pipeline.outputs.job_name }}"
+          STUDIO_URL="${{ steps.run_pipeline.outputs.studio_url }}"
+          STATUS="${{ steps.run_pipeline.outcome }}"
 
           cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY
           ## 🚗 Azure ML MLOps Pipeline — Run Summary
 
           | Field              | Value |
           |--------------------|-------|
+          | **Status**         | ${STATUS} |
           | **Trigger**        | \`${{ github.event_name }}\` on \`${{ github.ref_name }}\` |
-          | **Commit SHA**     | \`${{ github.sha }}\` |
+          | **Commit**         | \`${{ github.sha }}\` |
           | **Run by**         | @${{ github.actor }} |
-          | **Pipeline Status**| ${PIPELINE_STATUS} |
           | **AML Job Name**   | \`${JOB_NAME}\` |
           | **Workspace**      | \`${{ secrets.AZ_WORKSPACE }}\` |
           | **Resource Group** | \`${{ secrets.AZ_RESOURCE_GROUP }}\` |
-          | **Compute**        | \`${{ env.COMPUTE }}\` |
 
-          ### AzureML Pipeline Steps (run sequentially on compute cluster)
-          | Step | Component | Output |
-          |------|-----------|--------|
-          | A | \`preprocess_component\` | \`processed_data.csv\` |
-          | B | \`train_tune_component\` | \`model.joblib\` + MLflow nested runs |
-          | C | \`register_model_component\` | AML Model Registry entry |
+          ### 📋 Steps run by \`run_pipeline_all.py\`
+          | # | Step | Output |
+          |---|------|--------|
+          | 1 | Upload dataset | \`used_cars_raw\` Data Asset in AML |
+          | 2 | Register Environment | \`pricing-env\` (conda) |
+          | 3 | Register Components | \`preprocess / train_tune / register_model\` (v2) |
+          | 4 | Submit Pipeline | AML job: preprocess → train → register |
 
           $( [ -n "$STUDIO_URL" ] && echo "### 🔗 [Monitor in Azure ML Studio]($STUDIO_URL)" || true )
 
           ---
-          *GitHub Actions Workflow: ${{ github.workflow }} | Run #${{ github.run_number }}*
+          *Run #${{ github.run_number }} | ${{ github.workflow }}*
           SUMMARY

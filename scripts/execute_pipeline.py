@@ -36,16 +36,49 @@ from azure.core.exceptions import HttpResponseError
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-DEFAULT_DATA_PATH = (
+
+# Registered Data Asset name (created by upload_data.py)
+DATA_ASSET_NAME    = "used_cars_raw"
+DATA_ASSET_VERSION = "1"   # bump when you upload a new version
+
+# Fallback raw blob URI (only if the asset hasn't been registered yet)
+FALLBACK_DATA_PATH = (
     "azureml://datastores/workspaceblobstore/paths/used_cars.csv"
 )
 
 # Component versions to load from the workspace registry
 COMPONENT_VERSIONS = {
-    "preprocess_component":      "2",
-    "train_tune_component":      "2",
-    "register_model_component":  "2",
+    "preprocess_component":      "3",
+    "train_tune_component":      "3",
+    "register_model_component":  "3",
 }
+
+
+# ---------------------------------------------------------------------------
+# Resolve data path from registered Data Asset
+# ---------------------------------------------------------------------------
+def resolve_data_path(ml_client, env_override: str = "") -> str:
+    """
+    Priority:
+      1. DATA_PATH env var  (explicit override)
+      2. Registered Data Asset  azureml:used_cars_raw:<version>
+      3. FALLBACK_DATA_PATH  (hardcoded blob path)
+    """
+    if env_override:
+        print(f"[data]  Using DATA_PATH override: {env_override}")
+        return env_override
+
+    try:
+        asset = ml_client.data.get(DATA_ASSET_NAME, version=DATA_ASSET_VERSION)
+        uri = f"azureml:{asset.name}:{asset.version}"
+        print(f"[data]  Resolved data asset  → {uri}")
+        print(f"[data]  Blob path            → {asset.path}")
+        return uri
+    except Exception as exc:
+        print(f"[data]  ⚠️  Could not resolve data asset '{DATA_ASSET_NAME}': {exc}")
+        print(f"[data]  Run  python scripts/upload_data.py  to upload the dataset first.")
+        print(f"[data]  Falling back to: {FALLBACK_DATA_PATH}")
+        return FALLBACK_DATA_PATH
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +114,7 @@ def build_pipeline(preprocess_comp, train_comp, register_comp, raw_data_path: st
         raw_data=Input(
             type=AssetTypes.URI_FILE,
             path=raw_data_path,
+            mode="ro_mount",   # read-only mount — works with both blob URIs and azureml: URIs
         )
     )
 
@@ -121,8 +155,9 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Build pipeline job
     # ------------------------------------------------------------------
-    data_path    = os.environ.get("DATA_PATH", DEFAULT_DATA_PATH)
-    compute_name = os.environ.get("COMPUTE",   cfg.get("compute"))
+    # Resolve data path: registered asset URI > DATA_PATH env var > fallback blob path
+    data_path    = resolve_data_path(ml_client, env_override=os.environ.get("DATA_PATH", ""))
+    compute_name = os.environ.get("COMPUTE", cfg.get("compute"))
 
     print(f"\n[pipeline] Building pipeline …")
     print(f"  data_path : {data_path}")

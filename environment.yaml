@@ -1,6 +1,7 @@
 $schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
 name: pricing-env
-version: 1
+# Bumped to version 2 to include azureml-mlflow fix
+version: 2
 
 image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest
 
@@ -14,12 +15,19 @@ conda_file:
     - pip
     - pip:
         - pandas
+        - numpy
         - scikit-learn
         - optuna
-        - mlflow
         - joblib
-        - numpy
         - azure-ai-ml
         - azure-identity
         - cloudpickle
         - pyyaml
+        # ─────────────────────────────────────────────────────────────
+        # azureml-mlflow provides the bridge between the standard MLflow
+        # client and AzureML's tracking URI (azureml://...).
+        # It MUST be installed in the compute environment for MLflow to
+        # work correctly inside AzureML jobs.
+        # Plain 'mlflow' alone cannot connect to the azureml:// URI.
+        # ─────────────────────────────────────────────────────────────
+        - azureml-mlflow
