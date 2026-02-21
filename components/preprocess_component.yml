@@ -1,24 +1,34 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
-name: preprocess_component
-version: 1
-display_name: Preprocess Data Component
-type: command
-description: Component to clean and preprocess the raw input data.
-code: ../pipeline_components  # Points to the directory containing preprocess.py
 
-# IMPORTANT: You must replace 'azureml:AzureML-Minimal:latest' with an environment 
-# that has all your necessary Python libraries (pandas, scikit-learn, etc.) installed.
+# ─────────────────────────────────────────────────────────────────────────────
+# Component 1: Data Preprocessing
+# Cleans raw CSV, engineers features, logs stats to MLflow
+# ─────────────────────────────────────────────────────────────────────────────
+name: preprocess_component
+version: 2
+display_name: "Data Preprocessing"
+type: command
+description: >
+  Reads raw used-car CSV, strips units from numeric columns, drops nulls,
+  engineers power_per_cc / log_price / Segment_enc features, and logs
+  dataset statistics to MLflow.
+
+# Points to the folder containing preprocess.py (and the other .py files)
+code: ../pipeline_components
+
 environment: azureml:pricing-env:1
 
-command: >
+command: >-
   python preprocess.py
-  --input_data ${{inputs.input_data}} 
+  --input_data  ${{inputs.input_data}}
   --output_data ${{outputs.output_data}}
+
 inputs:
   input_data:
     type: uri_file
-    description: Path to the raw input data file (used_cars.csv).
+    description: "Raw input CSV file (used_cars.csv)"
+
 outputs:
   output_data:
     type: uri_folder
-    description: Path to the folder where processed data will be saved.
+    description: "Folder containing processed_data.csv"

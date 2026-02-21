@@ -1,23 +1,35 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
-name: train_tune_component
-version: 1
-display_name: Model Training and Tuning
-type: command
-description: Component for training and tuning the machine learning model.
-code: ../pipeline_components  # Points to the directory containing train_tune.py
 
-# IMPORTANT: Ensure this environment has libraries like scikit-learn, joblib, etc.
+# ─────────────────────────────────────────────────────────────────────────────
+# Component 2: Model Training & Hyperparameter Tuning
+# Optuna search + MLflow nested run logging + final model save
+# ─────────────────────────────────────────────────────────────────────────────
+name: train_tune_component
+version: 2
+display_name: "Model Training & Tuning (MLflow)"
+type: command
+description: >
+  Loads processed CSV, runs Optuna hyperparameter search (n_trials trials),
+  logs each trial as a nested MLflow run, trains a final GradientBoosting
+  model with best params, and registers it in the MLflow Model Registry.
+
+code: ../pipeline_components
+
 environment: azureml:pricing-env:1
 
-command: >
+command: >-
   python train_tune.py
-  --processed_data ${{inputs.processed_data}} 
-  --model_folder ${{outputs.model_folder}}
+  --processed_data  ${{inputs.processed_data}}
+  --model_folder    ${{outputs.model_folder}}
+  --experiment_name pricing_experiment
+  --trials          20
+
 inputs:
   processed_data:
     type: uri_folder
-    description: Path to the folder containing the processed dataset.
+    description: "Folder containing processed_data.csv from preprocess component"
+
 outputs:
   model_folder:
     type: uri_folder
-    description: Path to the folder containing the serialized model and metadata.
+    description: "Folder containing model.joblib and model_metadata.json"

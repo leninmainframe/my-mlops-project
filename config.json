@@ -1,5 +1,7 @@
 {
-    "subscription_id": "4327687e-5856-460d-9b72-ac75b8b1a3d2",
-    "resource_group": "MLOPS",
-    "workspace_name": "mlops"
+    "subscription_id": "2cca9a10-9857-44a1-a719-ea1af4d2d92d",
+    "resource_group": "ml-workspace",
+    "workspace_name": "Ml_workspace",
+    "tenant_id": "5b39f966-60ed-4a75-98c0-727038667d15",
+    "compute": "ml-cluster"
 }

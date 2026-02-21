@@ -1,52 +1,53 @@
-# scripts/register_environment.py
+"""
+scripts/register_environment.py
+================================
+Registers (or updates) the Azure ML environment defined in environment.yaml.
+
+Local usage (after `az login` or SP login):
+    python scripts/register_environment.py
+
+CI/CD usage (GitHub Actions):
+    Env vars AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, etc. are injected by the
+    workflow and auth_helper.py will automatically use ClientSecretCredential.
+"""
+
 import os
 import sys
-from azure.identity import DefaultAzureCredential
-from azure.ai.ml import MLClient, load_environment
+from pathlib import Path
 
-# --- Configuration & Authentication Setup ---
+# Shared auth/config helper
+sys.path.insert(0, str(Path(__file__).parent))
+from auth_helper import load_config, get_ml_client
 
-# 1. Read config from env (set by workflow YAML)
-SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID")
-RESOURCE_GROUP = os.environ.get("AZ_RESOURCE_GROUP")
-WORKSPACE = os.environ.get("AZ_WORKSPACE")
+from azure.ai.ml import load_environment
+from azure.ai.ml.exceptions import ValidationException
+from azure.core.exceptions import HttpResponseError
 
-if not all([SUBSCRIPTION_ID, RESOURCE_GROUP, WORKSPACE]):
-    print("One or more required environment variables (SUBSCRIPTION_ID, RESOURCE_GROUP, WORKSPACE) are missing. Exiting.")
-    sys.exit(1)
+ROOT = Path(__file__).resolve().parent.parent  # repo root
 
-# 2. Authenticate using DefaultAzureCredential
-# This uses the token established by the 'Azure Login (OIDC)' step.
-try:
-    cred = DefaultAzureCredential()
-    ml_client = MLClient(
-        cred, 
-        subscription_id=SUBSCRIPTION_ID,
-        resource_group_name=RESOURCE_GROUP, 
-        workspace_name=WORKSPACE
-    )
-except Exception as e:
-    print(f"Error during MLClient initialization: {e}")
-    sys.exit(1)
 
-print(f"Connected to workspace: {WORKSPACE}")
+def main() -> None:
+    cfg = load_config()
+    ml_client = get_ml_client(cfg)
 
-# --- Environment Registration Logic ---
+    # ------------------------------------------------------------------
+    # Load and register environment
+    # ------------------------------------------------------------------
+    env_yaml = ROOT / "environment.yaml"
+    if not env_yaml.exists():
+        print(f"[ERROR] environment.yaml not found at {env_yaml}")
+        sys.exit(1)
 
-# Assuming your environment definition file is named environment.yaml and is in the root directory
-# If you used 'pricing-env' previously, ensure that name matches here or in the environment.yaml file.
-ENVIRONMENT_YAML_PATH = "environment.yaml" # or "environment.yml" if that's the name you used
+    print(f"\n[env]  Loading environment definition from {env_yaml} …")
+    try:
+        env_def = load_environment(source=str(env_yaml))
+        registered_env = ml_client.environments.create_or_update(env_def)
+        print(f"[env]  ✅ Registered environment '{registered_env.name}' "
+              f"(version: {registered_env.version})")
+    except (ValidationException, HttpResponseError) as exc:
+        print(f"[ERROR] Failed to register environment: {exc}")
+        sys.exit(1)
 
-if not os.path.exists(ENVIRONMENT_YAML_PATH):
-    print(f"Error: Environment YAML file not found at {ENVIRONMENT_YAML_PATH}. Exiting.")
-    sys.exit(1)
 
-print(f"Loading environment definition from {ENVIRONMENT_YAML_PATH}...")
-try:
-    env_def = load_environment(source=ENVIRONMENT_YAML_PATH)
-    # Using create_or_update to register the environment or update its version
-    created_env = ml_client.environments.create_or_update(env_def) 
-    print(f"Successfully registered environment: {created_env.name} (Version {created_env.version})")
-except Exception as e:
-    print(f"Error registering environment: {e}")
-    sys.exit(1)
+if __name__ == "__main__":
+    main()

@@ -1,56 +1,68 @@
-# scripts/register_components.py
+"""
+scripts/register_components.py
+================================
+Registers (or updates) all Azure ML pipeline components defined under
+the components/ directory.
+
+Local usage (after `az login` or SP login):
+    python scripts/register_components.py
+
+CI/CD usage (GitHub Actions):
+    Env vars are injected by the workflow; auth_helper picks ClientSecretCredential.
+"""
+
 import os
 import sys
-from azure.identity import DefaultAzureCredential
-from azure.ai.ml import MLClient, load_component
+from pathlib import Path
 
-# --- Configuration & Authentication Setup ---
+# Shared auth/config helper
+sys.path.insert(0, str(Path(__file__).parent))
+from auth_helper import load_config, get_ml_client
 
-# 1. Read config from env (set by workflow YAML)
-SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID")
-RESOURCE_GROUP = os.environ.get("AZ_RESOURCE_GROUP")
-WORKSPACE = os.environ.get("AZ_WORKSPACE")
+from azure.ai.ml import load_component
+from azure.ai.ml.exceptions import ValidationException
+from azure.core.exceptions import HttpResponseError
 
-if not all([SUBSCRIPTION_ID, RESOURCE_GROUP, WORKSPACE]):
-    print("One or more required environment variables (SUBSCRIPTION_ID, RESOURCE_GROUP, WORKSPACE) are missing. Exiting.")
-    sys.exit(1)
+ROOT = Path(__file__).resolve().parent.parent  # repo root
 
-# 2. Authenticate using DefaultAzureCredential
-# This uses the token established by the 'Azure Login (OIDC)' step in the GitHub Actions workflow.
-try:
-    cred = DefaultAzureCredential()
-    ml_client = MLClient(
-        cred, 
-        subscription_id=SUBSCRIPTION_ID,
-        resource_group_name=RESOURCE_GROUP, 
-        workspace_name=WORKSPACE
-    )
-except Exception as e:
-    print(f"Error during MLClient initialization: {e}")
-    sys.exit(1)
-
-print(f"Connected to workspace: {WORKSPACE}")
-
-# --- Component Registration Logic ---
-
-# List of component YAML files to register
-# Ensure these paths are correct relative to where the script is run (usually the repo root)
-component_files = [
-    "./components/preprocess_component.yml",
-    "./components/train_tune_component.yml",
-    "./components/register_model_component.yml",
+# Component YAML files relative to repo root (in registration order)
+COMPONENT_YAMLS = [
+    "components/preprocess_component.yml",
+    "components/train_tune_component.yml",
+    "components/register_model_component.yml",
 ]
 
-print("Starting component registration...")
-for file_path in component_files:
-    try:
-        component_def = load_component(source=file_path)
-        # Using create_or_update to register the component or update if it already exists
-        ml_client.components.create_or_update(component_def) 
-        print(f"Successfully registered: {component_def.name} (Version {component_def.version})")
-    except Exception as e:
-        print(f"Error registering {file_path}: {e}")
-        # Exit to fail the workflow if registration fails
+
+def main() -> None:
+    cfg = load_config()
+    ml_client = get_ml_client(cfg)
+
+    # ------------------------------------------------------------------
+    # Register each component
+    # ------------------------------------------------------------------
+    print("\n[components] Starting component registration …\n")
+    all_ok = True
+    for rel_path in COMPONENT_YAMLS:
+        yaml_path = ROOT / rel_path
+        if not yaml_path.exists():
+            print(f"  [WARN] Component YAML not found – skipping: {yaml_path}")
+            all_ok = False
+            continue
+
+        try:
+            component_def = load_component(source=str(yaml_path))
+            registered    = ml_client.components.create_or_update(component_def)
+            print(f"  ✅ Registered '{registered.name}' (version: {registered.version})")
+        except (ValidationException, HttpResponseError) as exc:
+            print(f"  [ERROR] Failed to register {rel_path}: {exc}")
+            all_ok = False
+
+    if not all_ok:
+        print("\n[ERROR] One or more components failed to register.")
         sys.exit(1)
 
-print("All components registered successfully.")
+    print("\n[components] ✅ All components registered successfully.")
+
+
+if __name__ == "__main__":
+    main()
