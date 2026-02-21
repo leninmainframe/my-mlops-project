@@ -1,88 +1,217 @@
+# ─────────────────────────────────────────────────────────────────────────────
 # .github/workflows/mlops_pipeline.yml
-# Copy-paste this file into .github/workflows/mlops_pipeline.yml in your repo
-name: Run MLOps Pipeline on Azure ML
+#
+# Azure ML MLOps CI/CD — Single Pipeline Workflow
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# What this workflow does (ONE script handles everything):
+#
+#   python scripts/run_pipeline_all.py
+#       │
+#       ├── Step 1: Upload used_cars.csv  →  AzureML datastore (Data Asset)
+#       ├── Step 2: Register Environment  →  pricing-env (conda)
+#       ├── Step 3: Register Components   →  preprocess / train_tune / register_model (v2)
+#       └── Step 4: Submit Pipeline Job   →  AzureML runs A→B→C on ml-cluster
+#                       A. preprocess_component   → processed_data.csv
+#                       B. train_tune_component   → model.joblib + MLflow logs
+#                       C. register_model_component → AML Model Registry
+#
+# TRIGGERS
+# ─────────
+#   • Push to main / develop  (when pipeline code changes)
+#   • Manual via GitHub Actions UI  (workflow_dispatch)
+#
+# REQUIRED GITHUB SECRETS  (Settings → Secrets → Actions)
+# ──────────────────────────────────────────────────────────
+#   AZURE_CLIENT_ID         Service Principal Application (client) ID
+#   AZURE_CLIENT_SECRET     Service Principal client secret value
+#   AZURE_TENANT_ID         Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID   Azure subscription ID
+#   AZ_RESOURCE_GROUP       Resource group containing the AML workspace
+#   AZ_WORKSPACE            Azure ML workspace name
+#   AZ_COMPUTE              Compute cluster name (e.g. ml-cluster)
+# ─────────────────────────────────────────────────────────────────────────────
 
+name: "Azure ML MLOps Pipeline"
+
+# ── Triggers ─────────────────────────────────────────────────────────────────
 on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "pipeline_components/**"
+      - "components/**"
+      - "scripts/**"
+      - "environment.yaml"
+      - "used_cars.csv"
+      - ".github/workflows/mlops_pipeline.yml"
+
   workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: "Skip dataset upload? (set 1 if already uploaded)"
+        required: false
+        default: "0"
+      compute:
+        description: "Override compute cluster (leave blank → uses AZ_COMPUTE secret)"
+        required: false
+        default: ""
+      data_path:
+        description: "Override data URI (leave blank → auto-resolved from registry)"
+        required: false
+        default: ""
 
 permissions:
-  # Required for OIDC authentication via azure/login@v1
-  id-token: write
   contents: read
+  id-token: write
 
+# Cancel stale runs on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── Shared env vars for all steps ────────────────────────────────────────────
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET:   ${{ secrets.AZURE_CLIENT_SECRET }}
+  AZ_RESOURCE_GROUP:     ${{ secrets.AZ_RESOURCE_GROUP }}
+  AZ_WORKSPACE:          ${{ secrets.AZ_WORKSPACE }}
+  PYTHON_VERSION:        "3.10"
+
+# =============================================================================
+# SINGLE JOB — runs run_pipeline_all.py which handles everything
+# =============================================================================
 jobs:
-  run-azureml-pipeline:
-    name: Run Azure ML pipeline
+  mlops-pipeline:
+    name: "🚀 Azure ML MLOps — Full Pipeline Run"
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
-      - name: Checkout repository
+
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: "📥 Checkout repository"
         uses: actions/checkout@v4
 
-      - name: DEBUG — Check Secret Availability
+      # ── 2. Validate secrets ────────────────────────────────────────────────
+      - name: "🔑 Validate GitHub Secrets"
         run: |
-          echo "===== SECRET CHECK START ====="
-          test -n "${{ secrets.AZURE_CLIENT_ID }}" && echo "AZURE_CLIENT_ID = OK" || echo "AZURE_CLIENT_ID = EMPTY"
-          test -n "${{ secrets.AZURE_TENANT_ID }}" && echo "AZURE_TENANT_ID = OK" || echo "AZURE_TENANT_ID = EMPTY"
-          test -n "${{ secrets.AZURE_SUBSCRIPTION_ID }}" && echo "AZURE_SUBSCRIPTION_ID = OK" || echo "AZURE_SUBSCRIPTION_ID = EMPTY"
-          test -n "${{ secrets.AZ_RESOURCE_GROUP }}" && echo "AZ_RESOURCE_GROUP = OK" || echo "AZ_RESOURCE_GROUP = EMPTY"
-          test -n "${{ secrets.AZ_WORKSPACE }}" && echo "AZ_WORKSPACE = OK" || echo "AZ_WORKSPACE = EMPTY"
-          echo "===== SECRET CHECK END ====="
-
-      # Authenticate using OIDC (sets up DefaultAzureCredential for Azure SDKs)
-      - name: Azure Login (OIDC)
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          allow-no-subscriptions: false
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install azure-ai-ml azure-identity pyyaml
-
-      # Register Azure ML Environment
-      - name: Register Azure ML Environment
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZ_RESOURCE_GROUP: ${{ secrets.AZ_RESOURCE_GROUP }}
-          AZ_WORKSPACE: ${{ secrets.AZ_WORKSPACE }}
-        run: |
-          echo "Running scripts/register_environment.py"
-          python scripts/register_environment.py
-
-      # Register Azure ML Components
-      - name: Register Azure ML Components
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZ_RESOURCE_GROUP: ${{ secrets.AZ_RESOURCE_GROUP }}
-          AZ_WORKSPACE: ${{ secrets.AZ_WORKSPACE }}
-        run: |
-          echo "Running scripts/register_components.py"
-          python scripts/register_components.py
-
-      # Execute the pipeline
-      - name: Execute Azure ML Pipeline
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZ_RESOURCE_GROUP: ${{ secrets.AZ_RESOURCE_GROUP }}
-          AZ_WORKSPACE: ${{ secrets.AZ_WORKSPACE }}
-          # Add any other secrets you need here, e.g.:
-          # AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        run: |
-          echo "Executing pipeline script"
-          # Ensure you have a script that triggers/publishes your pipeline (adjust filename if necessary)
-          if [ -f scripts/execute_pipeline.py ]; then
-            python scripts/execute_pipeline.py
-          else
-            echo "scripts/execute_pipeline.py not found — please add a script that triggers your Azure ML pipeline"
+          echo "══════════════════════════════════════════"
+          echo "  Checking required secrets"
+          echo "══════════════════════════════════════════"
+          MISSING=0
+          for SECRET in \
+            AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID \
+            AZURE_SUBSCRIPTION_ID AZ_RESOURCE_GROUP AZ_WORKSPACE AZ_COMPUTE; do
+            VAL=$(printenv "$SECRET" || true)
+            if [ -z "$VAL" ]; then
+              echo "  ❌ MISSING : $SECRET"
+              MISSING=$((MISSING + 1))
+            else
+              echo "  ✅ OK      : $SECRET"
+            fi
+          done
+          echo "══════════════════════════════════════════"
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::error::$MISSING secret(s) missing — add under Settings → Secrets → Actions"
             exit 1
           fi
+        env:
+          AZ_COMPUTE: ${{ secrets.AZ_COMPUTE }}
+
+      # ── 3. Azure Login ─────────────────────────────────────────────────────
+      - name: "🔐 Azure Login (Service Principal)"
+        uses: azure/login@v2
+        with:
+          creds: >-
+            {
+              "clientId":       "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":   "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "tenantId":       "${{ secrets.AZURE_TENANT_ID }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+            }
+
+      # ── 4. Setup Python ────────────────────────────────────────────────────
+      - name: "🐍 Setup Python ${{ env.PYTHON_VERSION }}"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      # ── 5. Install dependencies ────────────────────────────────────────────
+      - name: "📦 Install Python dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            "azure-ai-ml>=1.12.0" \
+            "azure-identity>=1.15.0" \
+            pyyaml
+
+      # ── 6. Run full pipeline (single script) ──────────────────────────────
+      - name: "⚙️  Run Full MLOps Pipeline"
+        id: run_pipeline
+        env:
+          # Compute: prefer workflow_dispatch input, then secret
+          COMPUTE: >-
+            ${{
+              github.event.inputs.compute != '' &&
+              github.event.inputs.compute ||
+              secrets.AZ_COMPUTE
+            }}
+          # Dataset upload: set SKIP_UPLOAD=1 if already uploaded
+          SKIP_UPLOAD: ${{ github.event.inputs.skip_upload || '0' }}
+          # Optional data URI override
+          DATA_PATH: ${{ github.event.inputs.data_path || '' }}
+        run: |
+          echo "══════════════════════════════════════════"
+          echo "  Starting run_pipeline_all.py"
+          echo "  This single script runs all steps:"
+          echo "    1. Upload dataset to AzureML"
+          echo "    2. Register Environment (pricing-env)"
+          echo "    3. Register Components (preprocess/train/register)"
+          echo "    4. Submit AzureML Pipeline Job"
+          echo "══════════════════════════════════════════"
+
+          python scripts/run_pipeline_all.py | tee /tmp/pipeline_output.txt
+
+          # Extract job name + Studio URL for summary
+          JOB_NAME=$(grep "Job name" /tmp/pipeline_output.txt | awk '{print $NF}' || echo "N/A")
+          STUDIO_URL=$(grep "Studio URL" /tmp/pipeline_output.txt | awk '{print $NF}' || echo "")
+          echo "job_name=$JOB_NAME"     >> "$GITHUB_OUTPUT"
+          echo "studio_url=$STUDIO_URL" >> "$GITHUB_OUTPUT"
+
+      # ── 7. Write Job Summary ───────────────────────────────────────────────
+      - name: "📋 Write GitHub Actions Job Summary"
+        if: always()
+        run: |
+          JOB_NAME="${{ steps.run_pipeline.outputs.job_name }}"
+          STUDIO_URL="${{ steps.run_pipeline.outputs.studio_url }}"
+          STATUS="${{ steps.run_pipeline.outcome }}"
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY
+          ## 🚗 Azure ML MLOps Pipeline — Run Summary
+
+          | Field              | Value |
+          |--------------------|-------|
+          | **Status**         | ${STATUS} |
+          | **Trigger**        | \`${{ github.event_name }}\` on \`${{ github.ref_name }}\` |
+          | **Commit**         | \`${{ github.sha }}\` |
+          | **Run by**         | @${{ github.actor }} |
+          | **AML Job Name**   | \`${JOB_NAME}\` |
+          | **Workspace**      | \`${{ secrets.AZ_WORKSPACE }}\` |
+          | **Resource Group** | \`${{ secrets.AZ_RESOURCE_GROUP }}\` |
+
+          ### 📋 Steps run by \`run_pipeline_all.py\`
+          | # | Step | Output |
+          |---|------|--------|
+          | 1 | Upload dataset | \`used_cars_raw\` Data Asset in AML |
+          | 2 | Register Environment | \`pricing-env\` (conda) |
+          | 3 | Register Components | \`preprocess / train_tune / register_model\` (v2) |
+          | 4 | Submit Pipeline | AML job: preprocess → train → register |
+
+          $( [ -n "$STUDIO_URL" ] && echo "### 🔗 [Monitor in Azure ML Studio]($STUDIO_URL)" || true )
+
+          ---
+          *Run #${{ github.run_number }} | ${{ github.workflow }}*
+          SUMMARY

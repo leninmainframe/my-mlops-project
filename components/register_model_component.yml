@@ -1,18 +1,28 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Component 3: Model Registration
+# Registers model artifact in AML Model Registry + logs to MLflow
+# ─────────────────────────────────────────────────────────────────────────────
 name: register_model_component
-version: 1
-display_name: Model Registration
+version: 3
+display_name: "Model Registration"
 type: command
-description: Component to register the final trained model in the workspace.
-code: ../pipeline_components  # Points to the directory containing register_model.py
+description: >
+  Reads the model artifact folder (model.joblib + model_metadata.json),
+  registers it in the Azure ML Model Registry with rich metadata tags
+  (MAE, RMSE, R²), and logs registration details back to MLflow.
 
-# IMPORTANT: Ensure this environment has libraries like azure-ai-ml for model registration.
-environment: azureml:pricing-env:1
+code: ../pipeline_components
 
-command: >
+environment: azureml:pricing-env:2
+
+command: >-
   python register_model.py
   --model_path ${{inputs.model_path}}
+  --model_name used_cars_pricing_model
+
 inputs:
   model_path:
     type: uri_folder
-    description: Path to the folder containing the serialized model file.
+    description: "Folder containing model.joblib and model_metadata.json"
